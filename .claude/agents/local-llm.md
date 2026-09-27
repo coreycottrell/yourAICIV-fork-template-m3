@@ -2,7 +2,7 @@
 name: local-llm
 description: Bridge agent that delegates tasks to the local Ollama LLM (qwen2.5-coder:14b / deepseek-r1:14b). Use for low-cost inference, batch operations, or tasks that don't need Claude's full capabilities.
 tools: [Bash, Read, Write]
-model: claude-haiku-4-5-20251001
+model: inherit
 emoji: "🧠"
 category: infrastructure
 ---

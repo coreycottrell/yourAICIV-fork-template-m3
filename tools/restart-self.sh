@@ -71,6 +71,14 @@ if [ -f "/home/aiciv/civ/tools/pane_registry.py" ]; then
         --name "${CIV}-primary" --role primary --session "$SESSION" 2>/dev/null || true
 fi
 
+# First boot (every birth of this template is a 7-day MiniMax-M3 trial): apply the trial profile
+# BEFORE Claude starts, so the first session already routes to the M3 router. Idempotent; on a born
+# civ it is a no-op. Missing router seams -> loud banner here + the trial hook tells the human.
+# The tree Claude runs in is $PROJECT_DIR; fall back to the tree this script lives in.
+BOOT_ROOT="$PROJECT_DIR"
+[ -f "$BOOT_ROOT/tools/first_boot.py" ] || BOOT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+python3 "$BOOT_ROOT/tools/first_boot.py" --root "$BOOT_ROOT" --via restart-self.sh || true
+
 tmux send-keys -t "$SESSION" 'claude --dangerously-skip-permissions' Enter
 
 echo "Waiting 35s for Claude to load..."

@@ -150,6 +150,41 @@ def profile_locked(root: Path) -> bool:
     return isinstance(d, dict) and d.get("locked") is True
 
 
+# ── M3-trial-by-default births (the yourAICIV-fork-template-m3 distribution) ──
+#
+# In that tree every birth is a trial. The tree ships M3-only and LOCKED, with
+# config/model_profile.json {"state": "pending-first-boot"} and NO trial record.
+# tools/first_boot.py applies the trial profile at first boot (started_at = then);
+# apply rewrites model_profile.json without the pending state.
+PENDING_STATE = "pending-first-boot"
+# Shipped as ANTHROPIC_BASE_URL until first boot fills the router seam: a
+# closed local port, so an unprovisioned tree cannot reach ANY model (frontier included).
+UNPROVISIONED_BASE_URL = "http://127.0.0.1:9/m3-router-not-provisioned"
+
+
+def profile(root: Path) -> dict:
+    try:
+        d = json.loads(profile_path(root).read_text())
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def birth_pending(root: Path) -> bool:
+    """True on a trial-by-default tree whose first boot has not applied the profile yet."""
+    if profile(root).get("state") != PENDING_STATE:
+        return False
+    p, _ = configured_record_path(root)
+    return not trial_path(root).exists() and not (p and Path(p).exists())
+
+
+def birth_applied(root: Path) -> bool:
+    """The trial profile was applied to this civ (apply stamps applied_at) and is still locked."""
+    d = profile(root)
+    return d.get("locked") is True and d.get("profile") == "trial-m3" and bool(d.get("applied_at")) \
+        and d.get("state") != PENDING_STATE
+
+
 # ── time helpers ─────────────────────────────────────────────────────────────
 
 def iso(dt: datetime) -> str:
@@ -217,6 +252,12 @@ def load(root: Path) -> dict | None:
             except (OSError, ValueError):
                 return None
             return raw if isinstance(raw, dict) and raw.get("trial") is True else None
+        if birth_applied(root):
+            # The profile was applied (so a record was written) and the civ copy is gone: that is
+            # tampering or a lost file, never "not a trial". Fail CLOSED.
+            print(f"trial_state: WARNING {p} missing on an applied trial-profile civ; failing closed",
+                  file=sys.stderr)
+            return {"trial": True, "_corrupt": True}
         return None
     except (OSError, ValueError):
         # Unreadable/corrupt file. If this civ was born with the trial profile

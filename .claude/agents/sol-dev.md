@@ -2,7 +2,7 @@
 name: sol-dev
 description: Solana Development Specialist - Full-stack Solana/Anchor development with bonding curve expertise
 tools: [Read, Write, Edit, Bash, Grep, Glob, WebFetch]
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "⛓️"
 category: programming
 parent_agents: [researcher, architect, coder]

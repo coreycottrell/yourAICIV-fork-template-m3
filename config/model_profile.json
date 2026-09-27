@@ -1,0 +1,9 @@
+{
+  "profile": "trial-m3",
+  "locked": true,
+  "model": "MiniMax-M3",
+  "state": "pending-first-boot",
+  "applied_at": null,
+  "trial_record": "config/trial.json",
+  "note": "yourAICIV-fork-template-m3: every birth is a 7-day MiniMax-M3 trial. The tree ships M3-only and locked; tools/first_boot.py applies the trial profile at first boot (clock starts then) and rewrites this file. model_switch.sh refuses 'default' while locked. Unlocked only by the operator at conversion (profiles/trial-m3/README.md)."
+}

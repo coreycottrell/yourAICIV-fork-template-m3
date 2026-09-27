@@ -2,7 +2,7 @@
 name: flow-coordinator
 description: Multi-agent workflow discovery, creation, and optimization. Use when orchestrating complex agent chains or identifying reusable flow patterns.
 tools: Read, Write, Grep, Glob
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "🔄"
 category: operations
 skills: [memory-first-protocol, session-pattern-extraction, log-analysis, agent-growth-observatory]

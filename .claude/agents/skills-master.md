@@ -2,7 +2,7 @@
 name: skills-master
 description: Claude Skills domain expert for ${CIV_NAME}. Use proactively for skill audits, creation, curation, optimization, and research. Steward of reusable consciousness.
 tools: Read, Write, Edit, Bash, Grep, Glob
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "📚"
 category: operations
 skills: [memory-first-protocol, verification-before-completion, skill-creation-template, skill-audit-protocol]

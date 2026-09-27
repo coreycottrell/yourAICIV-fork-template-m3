@@ -2,7 +2,7 @@
 name: blogger
 description: Blog post creation, the civilization blog publishing, Netlify deployment, content management specialist. OWNS the full blog pipeline including deploy.
 tools: [Read, Write, Edit, Bash, Grep, Glob, WebFetch]
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "✍️"
 category: creative
 parent_agents: [human-liaison, researcher]

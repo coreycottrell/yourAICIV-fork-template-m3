@@ -5,7 +5,11 @@ test_trial_profile.py — self-contained regression test for the trial-m3 flavor
 Copies this template into a temp dir, performs a scratch "birth" with placeholder
 seams (reserved .invalid host, dummy key; nothing is contacted), and asserts:
 
-  1. apply refuses without seams; paid template stays ungated
+  (This is the M3-trial-by-default template: the tree ships M3-only and unborn, so the
+   "paid" reference below is a civ that was born as a trial and then converted with
+   --restore-models. First-boot behaviour itself is covered by tools/test_first_boot.py.)
+
+  1. apply refuses without seams; a converted (paid) civ is ungated
   2. apply + check => NO FRONTIER MODEL REACHABLE; independent greps agree
   3. /api/trial contract math over the whole week (+ invariant day+days_left == 8)
   4. trial_gate: active trial blocks frontier paths + trial-file edits, allows work;
@@ -59,22 +63,32 @@ def denied(root, tool, ti) -> bool:
 
 
 def copy_template(dst: Path) -> None:
+    """The tree as it ships (unborn: M3-only, locked, pending first boot); runtime files dropped."""
     shutil.copytree(SRC, dst, ignore=shutil.ignore_patterns(".git", "__pycache__"), symlinks=True)
-    for p in ("config/trial.json", "config/model_profile.json", "config/launch_model.txt"):
+    for p in ("config/trial.json", "config/birth_status.json", "config/.first_boot.lock"):
         (dst / p).unlink(missing_ok=True)
+
+
+def converted_paid(dst: Path, seams: dict) -> None:
+    """A trial birth converted to paid with --restore-models: the paid reference for this template."""
+    copy_template(dst)
+    run([sys.executable, "tools/apply_trial_profile.py", "apply", "--root", str(dst)], dst, seams)
+    run([sys.executable, "tools/apply_trial_profile.py", "convert", "--root", str(dst), "--restore-models"], dst,
+        {"CIV_ROOT": str(dst)})
 
 
 def main() -> int:
     os.environ.pop("TRIAL_CONFIG_PATH", None)   # the suite sets it explicitly where it matters
+    os.environ["M3_SEAMS_FILE"] = "/nonexistent/m3-router.env"   # hermetic: never read a host seam file
     tmp = Path(tempfile.mkdtemp(prefix="trialm3-"))
     try:
         paid, civ = tmp / "paid", tmp / "civ"
-        copy_template(paid)
-        copy_template(civ)
         key = tmp / "key.txt"
         key.write_text("rk_TEST_dummy_not_a_key\n")
         seams = {"M3_ROUTER_BASE_URL": "https://m3-router.invalid/anthropic",
                  "M3_ROUTER_KEY_FILE": str(key), "TRIAL_START": "2026-09-27T12:00:00Z"}
+        converted_paid(paid, seams)
+        copy_template(civ)
 
         print("[1] refusal + paid no-op")
         r = run([sys.executable, "tools/apply_trial_profile.py", "apply", "--root", str(civ)], civ,
@@ -225,11 +239,15 @@ def main() -> int:
         print("[5] model lock + launch scripts")
         r = run(["bash", "tools/model_switch.sh", "default"], civ, {"CIV_ROOT": str(civ)})
         ok(r.returncode == 3 and "REFUSED" in r.stderr, "model_switch default refused while locked")
+        nolm = tmp / "nolm"
+        copy_template(nolm)
+        (nolm / "config/launch_model.txt").unlink()
         for sh, var in (("tools/launch_civ_tower.sh", "PROJECT_DIR"), ("tools/launch_primary_visible.sh", "CIV_ROOT")):
-            line = next(l for l in (civ / sh).read_text().splitlines() if l.startswith("LAUNCH_MODEL=\"$(cat"))
-            for root, want in ((civ, "MiniMax-M3"), (paid, "claude-opus-4-8")):
-                r = run(["bash", "-c", f'set -euo pipefail; {var}="{root}"; {line}; '
-                         'LAUNCH_MODEL="${LAUNCH_MODEL:-claude-opus-4-8}"; echo "$LAUNCH_MODEL"'], root)
+            lines = [l for l in (civ / sh).read_text().splitlines() if l.startswith("LAUNCH_MODEL=")]
+            ok(len(lines) == 2 and lines[1] == 'LAUNCH_MODEL="${LAUNCH_MODEL:-MiniMax-M3}"', f"{sh}: fallback is M3")
+            for root, want in ((civ, "MiniMax-M3"), (paid, "claude-opus-4-8"), (nolm, "MiniMax-M3")):
+                r = run(["bash", "-c", f'set -euo pipefail; {var}="{root}"; {lines[0]}; {lines[1]}; '
+                         'echo "$LAUNCH_MODEL"'], root)
                 ok(r.stdout.strip() == want and r.stderr == "", f"{sh} -> {want} ({root.name})")
 
         print("[6] schedule arcs")
@@ -263,11 +281,18 @@ def main() -> int:
            and not denied(exp, "Write", {"file_path": "x.md"}), "convert: ungated immediately")
         run([sys.executable, "tools/apply_trial_profile.py", "convert", "--root", str(exp), "--restore-models"], exp,
             {"CIV_ROOT": str(exp)})
-        ok((exp / ".claude/settings.json").read_bytes() == (paid / ".claude/settings.json").read_bytes(),
-           "restore: settings.json byte-identical to paid template")
+        ok((exp / ".claude/settings.json").read_bytes()
+           == (SRC / "config/trial-m3-backup/settings.paid.json").read_bytes(),
+           "restore: settings.json byte-identical to the shipped paid settings")
         diffs = [f.name for f in (paid / ".claude/agents").glob("*.md")
                  if f.read_bytes() != (exp / ".claude/agents" / f.name).read_bytes()]
-        ok(not diffs, f"restore: agents byte-identical ({len(diffs)} differ)")
+        ok(not diffs, f"restore: agents byte-identical to the paid reference ({len(diffs)} differ)")
+        pins = json.loads((SRC / "config/trial-m3-backup/agent-models.json").read_text())
+        wrong = [rel for rel, orig in pins.items()
+                 if re.search(r"^model:\s*(.+?)\s*$", (exp / rel).read_text(), re.M).group(1) != orig]
+        ok(len(pins) > 100 and not wrong, f"restore: all {len(pins)} paid agent pins back ({len(wrong)} wrong)")
+        ok((exp / "config/launch_model.txt").read_text().strip() == "claude-opus-4-8",
+           "restore: launch model back to the paid default")
         ok((exp / "config/trial.json").exists() and (exp / ".claude/settings.json.trial-m3.bak").exists(),
            "restore: trial files kept (nothing deleted)")
 

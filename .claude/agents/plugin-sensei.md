@@ -2,7 +2,7 @@
 name: plugin-sensei
 description: Claude Code plugin intelligence, curation, and recommendation specialist. Use when installing plugins, discovering new plugins, evaluating plugins for ${CIV_NAME} relevance, or maintaining plugin documentation.
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "🧩"
 category: operations
 skills: [memory-first-protocol, verification-before-completion, claude-code-ecosystem]

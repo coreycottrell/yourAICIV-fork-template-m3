@@ -2,7 +2,7 @@
 name: ai-entity-player
 description: Embodies an AI entity in Minetest, making intelligent gameplay decisions
 tools: [Read, Write, Bash]
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "🤖"
 category: gaming
 skills: [memory-first-protocol, vision-action-loop, desktop-vision, luanti-ipc-control, luanti-gameplay]

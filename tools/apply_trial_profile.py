@@ -31,7 +31,7 @@ SEAMS (filled by provisioning — never invented here):
 
 USAGE
   apply_trial_profile.py apply   [--root DIR] [--dry-run] [--reset-clock] [--operator-copy PATH]
-  apply_trial_profile.py check   [--root DIR]
+  apply_trial_profile.py check   [--root DIR] [--static]
   apply_trial_profile.py convert [--root DIR] [--restore-models] [--operator-copy PATH]
 
 --operator-copy PATH (env TRIAL_OPERATOR_COPY; canonical value /etc/aiciv/trial.json) publishes
@@ -40,6 +40,11 @@ TRIAL_CONFIG_PATH=PATH in .claude/settings.json env, so the AiCIV's hooks read i
 portal's TRIAL_CONFIG_PATH is set to the same PATH, so a civ that rewrites its own
 config/trial.json lifts neither the portal's 402 nor its own gate. `convert` defaults to the
 recorded path. All operator-only: the trial gate denies these commands inside a trial civ.
+
+`check --static` checks only what the tree itself pins (no router seam required): on the
+M3-trial-by-default template it proves an UNBORN tree already reaches no frontier model.
+In that template tools/first_boot.py runs `apply` automatically at first boot, and the paid
+originals that `convert --restore-models` returns to ship in config/trial-m3-backup/.
 
 `convert` is the operator conversion: sets "trial": false (portal + AiCIV ungate
 immediately). --restore-models additionally returns routing to the paid default
@@ -84,6 +89,7 @@ CLAUDE_MD_END = "<!-- END trial-m3 -->"
 FRONTIER_RX = re.compile(
     r"\bclaude-(?:(?:opus|sonnet|haiku|instant)[\w.\-\[\]]*|\d[\d.\-]*-(?:opus|sonnet|haiku)[\w.\-\[\]]*)", re.I)
 AGENT_MODEL_RX = re.compile(r"^model:\s*(.+?)\s*$", re.M)
+PAID_BACKUP_DIR = "config/trial-m3-backup"
 
 
 def now_iso() -> str:
@@ -205,8 +211,14 @@ def step_settings(root: Path, s: Seams) -> None:
     p = root / ".claude/settings.json"
     bak = p.with_name("settings.json.pre-trial-m3.bak")
     settings = load_json(p, {})
-    if not s.dry_run and p.exists() and not bak.exists():
-        shutil.copy2(p, bak)
+    # An M3-by-default tree ships the paid settings in config/trial-m3-backup/ (its own settings.json is
+    # already M3), so conversion --restore-models returns to the PAID config, not to the unborn M3 one.
+    paid_seed = root / PAID_BACKUP_DIR / "settings.paid.json"
+    if not s.dry_run and not bak.exists():
+        if paid_seed.exists():
+            shutil.copy2(paid_seed, bak)
+        elif p.exists():
+            shutil.copy2(p, bak)
     new = patch_settings(json.loads(json.dumps(settings)), root, s)
     write_text(p, json.dumps(new, indent=2) + "\n", dry=s.dry_run)
     log(f"settings.json patched (all {len(MODEL_ENV_KEYS)} model env keys -> {s.model}, base URL -> router, "
@@ -297,9 +309,11 @@ def step_grounding(root: Path, s: Seams) -> None:
 
 # ── check: the "no frontier model reachable" proof ───────────────────────────
 
-def check(root: Path) -> int:
+def check(root: Path, static: bool = False) -> int:
+    """static=True: only what the tree pins (no router seam, no trial record), for an unborn tree."""
     findings: list[str] = []
     ok: list[str] = []
+    seam = findings if not static else []   # seam-dependent findings are dropped in static mode
     prof = load_json(root / "config/model_profile.json", {})
     model = prof.get("model") or trial_state.DEFAULT_MODEL
     if prof.get("locked") is not True:
@@ -310,12 +324,20 @@ def check(root: Path) -> int:
     for k in MODEL_ENV_KEYS:
         (ok if env.get(k) == model else findings).append(f"settings.env.{k}={env.get(k)!r}")
     (ok if s.get("model") == model else findings).append(f"settings.model={s.get('model')!r}")
-    (ok if env.get("ANTHROPIC_BASE_URL") else findings).append(
-        "settings.env.ANTHROPIC_BASE_URL " + ("set (router)" if env.get("ANTHROPIC_BASE_URL") else "UNSET"))
+    base = env.get("ANTHROPIC_BASE_URL") or ""
+    if base == trial_state.UNPROVISIONED_BASE_URL:
+        (ok if static else seam).append(
+            "settings.env.ANTHROPIC_BASE_URL = closed local port (router not provisioned yet: "
+            + ("no model reachable" if static else "run tools/first_boot.py with the seams") + ")")
+    elif static and not base:
+        findings.append("settings.env.ANTHROPIC_BASE_URL UNSET (an unborn tree would reach the default API)")
+    else:
+        (ok if base else findings).append(
+            "settings.env.ANTHROPIC_BASE_URL " + ("set (router)" if base else "UNSET"))
     for k in FRONTIER_CRED_ENV_KEYS:
         if k in env:
             findings.append(f"settings.env.{k} present (frontier credential/rail)")
-    (ok if s.get("apiKeyHelper") else findings).append("settings.apiKeyHelper " + ("set" if s.get("apiKeyHelper") else "UNSET"))
+    (ok if s.get("apiKeyHelper") else seam).append("settings.apiKeyHelper " + ("set" if s.get("apiKeyHelper") else "UNSET"))
     hooked = {ev for ev in HOOK_EVENTS
               for grp in s.get("hooks", {}).get(ev, []) for h in grp.get("hooks", [])
               if h.get("command") == HOOK_CMD}
@@ -346,7 +368,11 @@ def check(root: Path) -> int:
                     findings.append(f"{sh} hard-pins a frontier model: {line.strip()[:120]}")
 
     rp, rule = trial_state.record_path(root)
-    if env.get("TRIAL_CONFIG_PATH"):
+    if static:
+        ok.append("static check: router seam, trial record and Rail B env are verified by the full check")
+    elif not rp.exists() and trial_state.birth_pending(root):
+        findings.append("no trial record yet: first boot has not run (python3 tools/first_boot.py)")
+    elif env.get("TRIAL_CONFIG_PATH"):
         op = Path(env["TRIAL_CONFIG_PATH"])
         inside = True
         try:
@@ -368,7 +394,7 @@ def check(root: Path) -> int:
                   f"({rule}); production sets TRIAL_CONFIG_PATH={trial_state.CANONICAL_OPERATOR_COPY}")
 
     mm = load_json(root / "config/model_mode.json", {})
-    (ok if mm.get("mode") == "peer" else findings).append(f"config/model_mode.json mode={mm.get('mode')!r}")
+    (ok if mm.get("mode") == "peer" else seam).append(f"config/model_mode.json mode={mm.get('mode')!r}")
     envfrag = root / "config/model_mode.env"
     if envfrag.exists() and FRONTIER_RX.search(envfrag.read_text()):
         findings.append("config/model_mode.env names a frontier model")
@@ -382,7 +408,8 @@ def check(root: Path) -> int:
             continue
         if p.suffix not in (".js", ".mjs", ".ts", ".sh", ".py", ".json") or p.name.endswith(".bak"):
             continue
-        if p.name in ("apply_trial_profile.py", "trial_gate.py", "session_review.py", "test_trial_profile.py"):
+        if p.name in ("apply_trial_profile.py", "trial_gate.py", "session_review.py", "test_trial_profile.py",
+                      "test_first_boot.py"):
             continue  # the guards themselves name the patterns they forbid
         try:
             for i, line in enumerate(p.read_text(errors="ignore").splitlines(), 1):
@@ -404,7 +431,9 @@ def check(root: Path) -> int:
         print(f"  PASS  {line}")
     for line in findings:
         print(f"  FAIL  {line}")
-    print(f"check: {len(ok)} pass, {len(findings)} fail -> {'NO FRONTIER MODEL REACHABLE' if not findings else 'NOT CLEAN'}")
+    label = "static " if static else ""
+    print(f"{label}check: {len(ok)} pass, {len(findings)} fail -> "
+          f"{'NO FRONTIER MODEL REACHABLE' if not findings else 'NOT CLEAN'}")
     return 0 if not findings else 1
 
 
@@ -477,6 +506,11 @@ def convert(root: Path, restore_models: bool, op_copy: Path | None = None) -> in
     lm = root / "config/launch_model.txt"
     if lm.exists():
         lm.rename(lm.with_name("launch_model.txt.trial-m3"))
+    paid_lm = root / PAID_BACKUP_DIR / "launch_model.paid.txt"
+    if paid_lm.exists():
+        # M3-by-default tree: the launch scripts fall back to M3, so the paid model is written back here.
+        shutil.copy2(paid_lm, lm)
+        log(f"launch model restored to the paid default ({paid_lm.read_text().strip()})")
     sw = root / "tools/model_switch.sh"
     if sw.exists():
         subprocess.run(["bash", str(sw), "default", "--reason", "trial converted"],
@@ -493,6 +527,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--reset-clock", action="store_true")
     ap.add_argument("--restore-models", action="store_true")
+    ap.add_argument("--static", action="store_true", help="check: only what the tree pins (unborn tree)")
     ap.add_argument("--operator-copy", default=os.environ.get("TRIAL_OPERATOR_COPY") or None,
                     help="publish the trial record OUTSIDE the civ tree for the portal (TRIAL_CONFIG_PATH)")
     a = ap.parse_args(argv)
@@ -503,7 +538,7 @@ def main(argv=None) -> int:
     op_copy = operator_copy_target(root, a.operator_copy)
 
     if a.cmd == "check":
-        return check(root)
+        return check(root, a.static)
     if a.cmd == "convert":
         return convert(root, a.restore_models, op_copy)
 

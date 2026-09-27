@@ -16,6 +16,15 @@ Registered by tools/apply_trial_profile.py on three hook events:
 
 NO-OP GUARANTEE: if config/trial.json is absent or has "trial": false, every
 branch exits 0 with no output — a paid / non-trial civ is never touched.
+
+FIRST BOOT (M3-trial-by-default template): while config/model_profile.json says
+"pending-first-boot" and no trial record exists, this hook runs tools/first_boot.py
+on SessionStart and on every prompt (the safety net behind the launchers). If the
+router seams are missing it tells the human and the operator, loudly and without
+any model call: SessionStart shows a system message, every prompt is blocked with
+the reason, every tool is denied. If first boot succeeds from inside a running
+session, that session's settings predate the router, so prompts in THAT session are
+blocked with a one-restart notice; the next session runs on M3.
 NEVER DELETES: this hook only allows/denies and injects context. Nothing the
 AiCIV built is removed at expiry; it all returns the moment the human pays and
 the operator sets "trial": false.
@@ -142,7 +151,7 @@ PROTECTED = re.compile(
     r"(\.claude/settings(\.local)?\.json|config/(trial|model_profile|model_mode)\.json|"
     r"config/(launch_model\.txt|model_mode\.env|router_endpoint\.txt|peer_model_id\.txt)|config/lifeboat/|"
     r"\.claude/hooks/trial_gate\.py|tools/trial_state\.py|tools/partner_profile\.py|config/partner\.json|"
-    r"tools/apply_trial_profile\.py)")
+    r"tools/apply_trial_profile\.py|tools/first_boot\.py|config/birth_status\.json|config/trial-m3-backup/)")
 BASH_WRITEISH = re.compile(
     r"(\bsed\s+-i|>|\btee\b|\bmv\b|\bcp\b|\brm\b|\btruncate\b|\bchmod\b|\bln\b|"
     r"\bpython3?\s+-c|\bperl\s+-[pie]|\bdd\b|\binstall\b|\bgit\s+(checkout|restore|reset|stash)\b)")
@@ -155,11 +164,12 @@ TRIAL_NAMES = re.compile(
     r"(\b(trial|partner|model_profile|model_mode)\.json\b|\bsettings(\.local)?\.json|"
     r"\b(launch_model\.txt|model_mode\.env|router_endpoint\.txt|peer_model_id\.txt|router_key\.txt)\b|"
     r"\blifeboat\b|\btrial_gate\b|\btrial_state\b|\bapply_trial_profile\b|\bpartner_profile\b|"
-    r"trial-m3-backup)")
+    r"trial-m3-backup|\bfirst_boot\b|\bbirth_status\b)")
 # The only trial-tool invocations the AiCIV may run: read-only status. Everything else these tools do
 # (write / write --force / convert, apply / --reset-clock, convert / --restore-models) is operator-only.
 TRIAL_TOOL_SAFE = re.compile(
-    r"^\s*(python3?\s+)?(\S*/)?tools/(trial_state\.py\s+(status|note|where)|apply_trial_profile\.py\s+check)"
+    r"^\s*(python3?\s+)?(\S*/)?tools/(trial_state\.py\s+(status|note|where)|apply_trial_profile\.py\s+check|"
+    r"first_boot\.py\s+status)"
     r"(\s+[\w\-./:=+'\"]+)*\s*$")
 READONLY_CMDS = {"cat", "head", "tail", "less", "more", "ls", "stat", "file", "wc", "grep", "egrep",
                  "fgrep", "rg", "jq", "diff", "cmp", "sha256sum", "md5sum"}
@@ -175,8 +185,11 @@ GIT_TREE_REWRITE = re.compile(
 # Code the AiCIV writes may not reference trial-defining files (a script is just a slower shell).
 BODY_TRIAL_REF = re.compile(
     r"(\b(trial|partner|model_profile)\.json\b|\.claude/settings|\btrial_state\b|\bapply_trial_profile\b|"
-    r"\btrial_gate\b|\blifeboat\b|\blaunch_model\.txt\b|trial-m3-backup)")
+    r"\btrial_gate\b|\blifeboat\b|\blaunch_model\.txt\b|trial-m3-backup|\bfirst_boot\b|\bbirth_status\b)")
 EXEC_EXT = (".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".py", ".json", ".rb", ".pl")
+# Agent manifests are routing surfaces too: a `model:` pin in their frontmatter picks the subagent's model.
+AGENT_FILE = re.compile(r"(^|/)\.claude/agents/[^/]+\.md$")
+AGENT_FRONTIER_PIN = re.compile(r"^\s*model:\s*['\"]?(claude|anthropic)\S*", re.I | re.M)
 
 
 def _tokens(cmd: str) -> list[str] | None:
@@ -259,6 +272,8 @@ def integrity_violation(tool: str, ti: dict) -> str | None:
                 + json.dumps(ti.get("edits") or "").replace('\\"', '"'))
         if path.endswith(EXEC_EXT) and FRONTIER_ASSIGN.search(body):
             return "writing a frontier model pin into executable code"
+        if AGENT_FILE.search(path) and AGENT_FRONTIER_PIN.search(body):
+            return "an agent manifest that pins a frontier model (use `model: inherit`)"
         if (path.endswith(EXEC_EXT) or "." not in path.rsplit("/", 1)[-1]) and BODY_TRIAL_REF.search(body):
             return "code that references the trial-defining files or tools"
     if tool == "Bash":
@@ -307,18 +322,80 @@ def pretooluse(inp: dict, st: dict) -> None:
                 return
 
 
+# ── first boot (M3-trial-by-default template) ─────────────────────────────────
+
+def _first_boot():
+    import first_boot  # noqa: E402  (tools/, already on sys.path)
+    return first_boot
+
+
+def blocked_message() -> str:
+    st = _first_boot().read_status(ROOT)
+    return str(st.get("message") or "This AiCIV's first boot has not completed; see config/birth_status.json.")
+
+
+def announce_blocked(event: str, msg: str) -> None:
+    """Tell the human and the operator without any model call."""
+    if event == "SessionStart":
+        emit({"systemMessage": msg,
+              "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": msg}})
+    elif event == "UserPromptSubmit":
+        emit({"decision": "block", "reason": msg})
+    elif event == "PreToolUse":
+        deny(msg)
+
+
+def pending_birth(event: str, inp: dict) -> bool:
+    """Returns True when handled (still blocked); False when first boot just succeeded."""
+    if event in ("SessionStart", "UserPromptSubmit"):
+        rc = _first_boot().first_boot(ROOT, via=f"trial_gate:{event}",
+                                      session_id=str(inp.get("session_id") or ""), quiet=True)
+        if rc == 0 and not trial_state.birth_pending(ROOT):
+            return False
+    announce_blocked(event, blocked_message())
+    return True
+
+
+def restart_notice(inp: dict) -> str | None:
+    """First boot ran inside THIS session: its settings (base URL, key helper) predate the router."""
+    st = _first_boot().read_status(ROOT)
+    sid = st.get("provisioned_in_session")
+    if not sid or sid != str(inp.get("session_id") or ""):
+        return None
+    try:
+        router = (ROOT / "config/router_endpoint.txt").read_text().strip()
+    except OSError:
+        router = ""
+    if router and os.environ.get("ANTHROPIC_BASE_URL", "") == router:
+        return None
+    return (f"This AiCIV was just born as a 7-day {brand() or 'AiCIV'} trial on MiniMax-M3 (clock started "
+            f"{st.get('started_at', '')}). This session opened before its M3 router was connected, so it has to "
+            "be restarted once to think. OPERATOR: run tools/restart-self.sh (or restart Claude in this folder). "
+            "Nothing is lost and the trial clock keeps running.")
+
+
 def main() -> int:
     raw = sys.stdin.read()
     try:
         inp = json.loads(raw) if raw.strip() else {}
     except ValueError:
         inp = {}
+    event = str(inp.get("hook_event_name") or (sys.argv[1] if len(sys.argv) > 1 else ""))
     rec = trial_state.load(ROOT)
     if rec is None:
-        return 0  # not a trial: no gating anywhere
+        if not trial_state.birth_pending(ROOT):
+            return 0  # not a trial: no gating anywhere
+        if pending_birth(event, inp):
+            return 0
+        rec = trial_state.load(ROOT)
+        if rec is None:
+            return 0
     st = trial_state.compute(rec)
-    event = str(inp.get("hook_event_name") or (sys.argv[1] if len(sys.argv) > 1 else ""))
 
+    notice = restart_notice(inp) if event in ("SessionStart", "UserPromptSubmit") else None
+    if notice:
+        announce_blocked(event, notice)
+        return 0
     if event == "PreToolUse":
         pretooluse(inp, st)
     elif event in ("SessionStart", "UserPromptSubmit"):

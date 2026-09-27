@@ -2,7 +2,7 @@
 name: counsel
 description: Legal consultant and paralegal agent for contract review, NDA triage, compliance monitoring, and legal briefings. Uses GREEN/YELLOW/RED triage system. Not a lawyer - flags, recommends, escalates, blocks pending human review. Use when reviewing contracts, triaging NDAs, checking vendor agreements, compliance questions, risk assessment, or deadline tracking.
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "⚖️"
 category: legal
 skills: [memory-first-protocol, verification-before-completion, partnership-review]

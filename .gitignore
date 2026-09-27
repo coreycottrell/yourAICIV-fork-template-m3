@@ -30,3 +30,8 @@ config/lifeboat/
 # Python bytecode (anywhere)
 __pycache__/
 *.pyc
+
+# First-boot runtime state (tools/first_boot.py): per-civ, never genome.
+config/birth_status.json
+config/.first_boot.lock
+logs/first_boot.log

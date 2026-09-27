@@ -12,17 +12,10 @@
       "Bash"
     ]
   },
-  "model": "MiniMax-M3",
   "env": {
-    "ANTHROPIC_MODEL": "MiniMax-M3",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "MiniMax-M3",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "MiniMax-M3",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "MiniMax-M3",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "MiniMax-M3",
-    "ANTHROPIC_SMALL_FAST_MODEL": "MiniMax-M3",
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9/m3-router-not-provisioned",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-opus-4-8[1m]",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "ANTHROPIC_MODEL": "claude-opus-4-8[1m]"
   },
   "hooks": {
     "PostToolUse": [
@@ -38,16 +31,6 @@
       }
     ],
     "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/trial_gate.py\"",
-            "timeout": 5
-          }
-        ]
-      },
       {
         "matcher": "Task|Bash|Write|Edit",
         "hooks": [
@@ -75,30 +58,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/trial_gate.py\"",
-            "timeout": 60
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session_start.py\"",
             "timeout": 10
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/trial_gate.py\"",
-            "timeout": 60
           }
         ]
       }

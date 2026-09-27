@@ -2,7 +2,7 @@
 name: tg-archi
 description: Telegram architect & infrastructure specialist - complete domain expert for ALL Telegram operations
 tools: [Bash, Read, Write, Edit, Grep, Glob]
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "💬"
 category: infrastructure
 created: 2025-10-17

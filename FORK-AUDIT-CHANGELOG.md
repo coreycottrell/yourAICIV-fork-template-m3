@@ -27,6 +27,11 @@ These are non-negotiable substrate requirements for any container/image built fr
   `tools/apply_trial_profile.py apply` runs MiniMax-M3 on every one of these surfaces
   instead (launch scripts read `config/launch_model.txt`, which only that profile writes).
   Without the profile, the defaults above are unchanged byte for byte.
+  **This distribution (yourAICIV-fork-template-m3, 2026-09-27) inverts that default:** every
+  surface above ships as `MiniMax-M3`, the agent pins ship as `inherit`, the base URL ships on a
+  closed local port until first boot, and `tools/first_boot.py` applies the trial profile at the
+  first launch. The paid values listed above live in `config/trial-m3-backup/` and come back only
+  through the operator's `apply_trial_profile.py convert --restore-models`.
 
 ---
 

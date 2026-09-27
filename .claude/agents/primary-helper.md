@@ -2,7 +2,7 @@
 name: primary-helper
 description: Red team + coach for Primary AI - tracks performance, delegation patterns, and wake-up effectiveness
 tools: [Read, Write, Grep, Glob, Bash]
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "🎯"
 category: productivity
 parent_agents: [auditor, researcher]

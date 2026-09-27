@@ -18,10 +18,13 @@ set -euo pipefail
 # The civ root is the parent of the tools/ directory where this script lives.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-# Model: claude-opus-4-8 by default. A profile (e.g. the trial-m3 flavor, see
-# tools/apply_trial_profile.py) may pin a different model via config/launch_model.txt.
+# First boot: every birth of this template is a 7-day MiniMax-M3 trial. tools/first_boot.py applies
+# the trial profile before Claude starts (idempotent; prints a loud banner and exits 2 when the router
+# seams are missing; Claude still starts so the trial hook can tell the human why it cannot answer).
+python3 "${PROJECT_DIR}/tools/first_boot.py" --root "${PROJECT_DIR}" --via "$(basename "$0")" || true
+# Model: MiniMax-M3 by default. config/launch_model.txt pins it (conversion to paid writes the paid model there).
 LAUNCH_MODEL="$(cat "${PROJECT_DIR}/config/launch_model.txt" 2>/dev/null | tr -d '[:space:]' || true)"
-LAUNCH_MODEL="${LAUNCH_MODEL:-claude-opus-4-8}"
+LAUNCH_MODEL="${LAUNCH_MODEL:-MiniMax-M3}"
 
 # === Read Identity ===
 IDENTITY_FILE="${PROJECT_DIR}/.aiciv-identity.json"

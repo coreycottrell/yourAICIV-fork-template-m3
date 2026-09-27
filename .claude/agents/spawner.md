@@ -2,7 +2,7 @@
 name: spawner
 description: Creates new agent manifests and registers them in the system. Executes approved spawn proposals.
 tools: [Read, Write, Edit, Bash]
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "🥚"
 category: operations
 skills: [memory-first-protocol, agent-creation, verification-before-completion]

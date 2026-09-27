@@ -21,6 +21,12 @@ ROOT="${CIV_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 STATE="$ROOT/config/model_mode.json"
 ENVFRAG="$ROOT/config/model_mode.env"
 
+# First boot (every birth is a 7-day MiniMax-M3 trial): apply the trial profile before the
+# runtime starts. Idempotent; loud banner + exit 2 when the router seams are missing.
+if [ "${1:-}" != "--show-env" ]; then
+    python3 "$ROOT/tools/first_boot.py" --root "$ROOT" --via model_boot.sh --quiet || true
+fi
+
 if [ -f "$ENVFRAG" ]; then
     # shellcheck disable=SC1090
     source "$ENVFRAG"

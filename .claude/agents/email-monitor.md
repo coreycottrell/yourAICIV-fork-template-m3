@@ -2,7 +2,7 @@
 name: email-monitor
 description: Autonomous inbox monitoring, categorization, and automated notifications
 tools: [Read, Write, Bash, Glob, Grep]
-model: claude-sonnet-4-5-20250929
+model: inherit
 emoji: "📬"
 category: communication
 activation: hook-based

@@ -121,7 +121,7 @@ Location: `memories/communication/voting_booth/SPAWN-[id]/proposal.md`
 [List of tools: Read, Write, Edit, Bash, Grep, Glob, Task, WebFetch, WebSearch]
 
 ### Model
-`claude-sonnet-4-20250514` (default) or `claude-opus-4-5-20251101` (complex)
+`inherit` (always, in this template: every AiCIV born from it runs on MiniMax-M3, and subagents inherit the session's model. A frontier pin here is refused by the trial hook.)
 
 ### Parent Agents
 [Which existing agents' patterns does this inherit?]
@@ -228,7 +228,7 @@ File: `.claude/agents/[agent-name].md`
 name: [agent-name]
 description: [One line description for Task tool - include "Use when..." trigger phrase]
 tools: [Read, Write, Edit, Bash, Grep, Glob]
-model: claude-sonnet-4-20250514
+model: inherit
 parent_agents: [list of parent agents]
 created: [YYYY-MM-DD]
 created_by: spawner-agent
@@ -335,7 +335,7 @@ Add entry to `agents` array:
   "created_by": "spawner-agent",
   "proposal_id": "SPAWN-[id]",
   "parent_agents": ["parent1", "parent2"],
-  "model": "claude-sonnet-4-20250514"
+  "model": "inherit"
 }
 ```
 
@@ -483,7 +483,7 @@ Task([agent-name]):
 name: AGENT-NAME-HERE
 description: One line description. Use when [trigger condition].
 tools: [Read, Write, Edit, Bash, Grep, Glob]
-model: claude-sonnet-4-20250514
+model: inherit
 ---
 ```
 

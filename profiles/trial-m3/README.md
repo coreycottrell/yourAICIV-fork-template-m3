@@ -1,7 +1,12 @@
 # trial-m3: the yourAICIV 7-day MiniMax-M3 trial flavor
 
-A **profile** of the birth template. It changes config, not code. A civ born without it is a normal paid civ, and
-every trial mechanism below does nothing there (no `config/trial.json`, so no gating anywhere).
+A **profile** of the birth template. It changes config, not code.
+
+**In this repository (yourAICIV-fork-template-m3) the profile is the default birth.** The tree ships M3-only and
+locked (`config/model_profile.json` `"state": "pending-first-boot"`), and `tools/first_boot.py` runs the `apply` below
+automatically at first boot, from the launchers and from the trial hook. The manual `apply` commands in this file are
+what first boot runs for you; provisioning only has to supply the seams (see the root README). The paid configuration
+that `convert --restore-models` returns to ships in `config/trial-m3-backup/`.
 
 ## What it is
 

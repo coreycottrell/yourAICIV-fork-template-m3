@@ -1,191 +1,198 @@
-# yourAICIV — AiCIV birth template
+# yourAICIV 7-day M3 trial template
 
-This repository is the **birth template** for a yourAICIV AiCIV. An AiCIV is a persistent AI partner for one
-human: it has its own name, memory, schedule, and a small organization of specialist minds it coordinates.
-Each new AiCIV starts as a copy of this repository and grows from there.
+This repository is the **birth template for yourAICIV trial AiCIVs**. An AiCIV is a persistent AI partner for one
+human: it has its own name, memory, schedule, and a small organization of specialist minds it coordinates. Every
+AiCIV born from this repository is a **7-day free trial that runs only on MiniMax-M3**. There is no trial step to
+remember: the first boot turns the newborn into a trial automatically.
 
-yourAICIV is a reseller distribution (reseller: Travis Morehead). It adds three things to the generic AiCIV
-template:
+| Repository | What it is |
+|---|---|
+| **this one**, [`yourAICIV-fork-template-m3`](https://github.com/coreycottrell/yourAICIV-fork-template-m3) | trial births: MiniMax-M3 only, 7 days, then a payment link |
+| [`yourAICIV-fork-template`](https://github.com/coreycottrell/yourAICIV-fork-template) | paid births (the same AiCIV; the trial exists there only as an opt-in profile) |
+| [`yourAICIV-react-portal`](https://github.com/coreycottrell/yourAICIV-react-portal) | the portal the human uses to talk to their AiCIV; it shows the countdown and, after day 7, the payment screen |
 
-1. **A partner profile** (`config/partner.json`). Greetings, the trial countdown, and the payment link all read
-   from this one file.
-2. **The delivery engine** (`apps/client-starter/`). The AiCIV uses it to stand up and run a small business system
-   for its human or their clients.
-3. **A 7-day MiniMax-M3 trial birth** (`profiles/trial-m3/`). This is a config profile, not a separate codebase.
+yourAICIV is a reseller distribution (reseller: Travis Morehead). The brand, the reseller name, and the payment link
+come from one file, `config/partner.json`.
 
-> This repository is public. Secrets never live here: the router address and key, per-client secrets, and customer
+> This repository is public. Secrets never live here. The router address and key, per-client secrets, and customer
 > data are **seams** that provisioning fills at birth, outside version control (see [Provisioning](#provisioning)).
 
 ---
 
-## Two kinds of birth
+## What the human experiences
 
-| | **Paid birth** | **7-day trial birth** |
-|---|---|---|
-| How | Stamp the template. Nothing else. | Stamp the template, then run `tools/apply_trial_profile.py apply` |
-| Model | The template's default model configuration | **MiniMax-M3 only**, on every surface (primary, every specialist, every workflow), through a router |
-| Capacity | Full organization | Full organization. Nothing is cut down for the trial |
-| `config/trial.json` | absent, so nothing is gated anywhere | written once at birth with the trial clock |
-| After day 7 | n/a | **Paused, never deleted.** The AiCIV does no work and replies with a short, warm note plus the payment link. The portal shows only a payment button. All work, files, and memory are kept |
-| Becoming paid | n/a | The operator runs `apply_trial_profile.py convert`. Everything unlocks immediately, and `--restore-models` returns the civ to paid routing byte for byte |
+The AiCIV knows it is on "Day N of 7" from its first message to its last, and says so plainly, as a countdown and never
+as pressure. Its operating contract for the week is `.claude/skills/m3-trial-mode/SKILL.md`.
 
-### The trial contract (shared with the portal)
+| When | What happens |
+|---|---|
+| **Hour 0-1** | **It gets to know the human first.** A short identity interview covers their biggest goal, their 90-day goal, their skills and domain, and what would impress them. Goals and aspirations come before any showing off, so the first build is aimed at *them*. Three builds are locked from those answers. |
+| **Hour 1+** | **The first WOW ships as soon as it is ready.** It aims for the first session: for example a live site from the delivery engine, or a real plan against their 90-day goal. A check-in 4 hours after birth makes sure there is a first win. |
+| **Day 1 evening** | A preview: "here is what I'll have for you tomorrow." |
+| **By end of Day 2** | Build #2, without being asked. It acts on its own; nothing waits for the human to email first. |
+| **Day 3** | **Hard ceiling for Build #1** (72 hours is a ceiling, never a waiting period), plus deep research on their real question with every claim sourced. |
+| **Day 4** | A proactive surprise and the first business number (CRM or dashboard from the delivery engine). |
+| **Day 5** | The main showcase, while they are still deciding. |
+| **Day 6** | Week in review: everything shipped, each item with a link, and an honest, specific ask to subscribe. |
+| **Day 7** | A week-two roadmap and a plain explanation of what happens when the trial ends. |
 
-`config/trial.json` at the civ root:
+Every factual claim carries a source URL or an on-disk receipt, and a second mind checks each build before it ships
+(`workflows/m3-trial-build.js`, `tools/receipt_check.py`). If research could not be verified, the AiCIV says so
+instead of guessing.
 
-```json
-{"trial": true, "started_at": "<ISO8601 UTC>", "duration_days": 7, "expires_at": "<ISO8601 UTC>",
- "payment_url": "<from config/partner.json>", "brand": "yourAICIV", "reseller": "Travis Morehead",
- "model": "MiniMax-M3"}
+### Day 7: paused, never deleted
+
+When `expires_at` passes:
+
+- **The AiCIV stops working.** Its hook (`.claude/hooks/trial_gate.py`) blocks every work tool. It answers any message
+  with a short, warm note: the trial has ended, everything is saved, and here is the link to continue
+  (`payment_url`, from `config/partner.json`).
+- **The portal** replaces everything with a payment screen. Its API answers 402 except for `/api/trial`.
+- **Nothing is deleted.** Work, files, memory, and running client sites stay exactly as they were.
+
+### Conversion (after the human pays)
+
+```bash
+sudo -E python3 tools/apply_trial_profile.py convert --root "$CIV_ROOT"                    # ungate now
+sudo -E python3 tools/apply_trial_profile.py convert --root "$CIV_ROOT" --restore-models   # and move to paid routing
 ```
 
-- If the file is absent or `"trial": false`, the civ is not on trial and nothing is gated.
-- **Where the record is read (one rule for the AiCIV, its tools, and the portal):**
-  1. `$TRIAL_CONFIG_PATH` if set. In production this is the **operator copy at `/etc/aiciv/trial.json`**
-     (root-owned 0644, outside the civ tree; one civ per container, so one path everywhere);
-  2. else the `TRIAL_CONFIG_PATH` birth recorded in `.claude/settings.json` `env`;
-  3. else `$CIV_ROOT/config/trial.json` (the civ copy; `CIV_ROOT=/home/aiciv` in the standard container).
+`convert` writes `"trial": false` to the operator copy (the one the portal reads) and to the civ copy. The portal
+and the AiCIV ungate within seconds, with no restart. `--restore-models` also puts back the **paid** configuration
+this repository keeps in `config/trial-m3-backup/`: `.claude/settings.json` (byte for byte the paid template's), all
+112 agent model pins, and the paid launch model. It unlocks the model switch. Every trial file is kept as an audit
+copy. The paid model applies from the next session start.
 
-  `python3 tools/trial_state.py where` prints the resolved path. A configured operator copy that is missing on a
-  trial civ fails **closed** (the AiCIV treats the trial as ended, `check` fails), so a mount mistake can never
-  silently ungate a trial. A host that runs several civs outside containers uses `/etc/aiciv/<civ>/trial.json`
-  and sets `TRIAL_CONFIG_PATH` to it for both the civ and its portal.
-- The portal's `GET /api/trial` returns `{"trial", "day", "days_left", "expires_at", "expired", "payment_url"}`.
-  `tools/trial_state.py` is the reference implementation (`python3 tools/trial_state.py status` prints exactly that
-  JSON).
-- Expiry is enforced on both sides. The AiCIV's hook (`.claude/hooks/trial_gate.py`) blocks all work tools except
-  the reply path. The portal API refuses normal endpoints with a 402-style response. The router key expiring is the
-  hard stop for inference (see below).
-
-### What the trial does in its week
-
-The trial AiCIV knows it is on Day N of 7 (`.claude/skills/m3-trial-mode/`). It learns its human's goals first with a
-short identity interview, then ships three builds aimed at those goals. Each build ships **as soon as it is ready**:
-72 hours is a ceiling for the first build, never a waiting period. Every factual claim carries a source URL or an
-on-disk receipt, and a second mind checks each build before it ships (`workflows/m3-trial-build.js`,
-`tools/receipt_check.py`). The week closes with an honest review of what shipped and a plan for week two.
+Conversion is manual for now. The planned follow-up is a Stripe `checkout.session.completed` webhook on the payment
+link that runs `convert` for the matching civ.
 
 ---
 
-## The delivery engine
+## How a birth works
 
-`apps/client-starter/` is a self-hosted Flask/SQLite business system: public funnel, CRM, a three-number dashboard,
-email automations, store, blog, affiliates, booking, and pluggable payments with Stripe as the default. The AiCIV
-runs it **for** its human (client #1 is their own business by default) and for their clients.
+Nothing changes for the fleet. Stamp the template, fill the usual template variables
+(`tools/template_substitute.sh`), provide the seams below, and start the AiCIV the way you always do. The **first
+boot** does the rest.
 
-- **Operating manual:** `.claude/skills/client-onboarding/SKILL.md`, five phases: Intake, Provision, Customize,
-  Verify, Hand Off.
-- **When it fires:** a self-removing gate in `.claude/CLAUDE.md` starts it after the newborn's awakening is
-  verified. It also fires whenever the human asks for a website, funnel, CRM, store, or booking page. The switch is
-  `config/client-onboarding.json`.
-- **Never edited in place.** `clone_client.sh <client-slug>` stamps a per-client instance with its own random
-  secrets, database, and port. Instances bind to `127.0.0.1`, and they are gitignored (they hold client secrets and
-  customer data).
-- **Trial rule:** after a trial expires, no new client work starts. Running client sites are never stopped or
-  deleted.
-- Provenance, and every deviation from the original package, is listed in `apps/README.md`.
+`tools/first_boot.py` runs automatically **before the first model call**, from every path that starts the AiCIV:
 
----
+- `tools/restart-self.sh` (the fleet's launch and restart path);
+- `tools/launch_civ_tower.sh`, `tools/launch_primary_visible.sh`, `tools/model_boot.sh`;
+- the trial hook on `SessionStart` and on every prompt, as the safety net for any other launcher.
 
-## Partner profile
+On the first boot that has the router seams, it runs `tools/apply_trial_profile.py apply`:
 
-`config/partner.json`:
+- writes `config/trial.json`: `started_at` = now, `expires_at` = 7 days later, `payment_url` / `brand` /
+  `reseller` from `config/partner.json`, `model` = `MiniMax-M3`;
+- routes every model surface to MiniMax-M3 through the router (the primary, every specialist, every workflow, every
+  VP incarnation), sets the key helper, and keeps the **full VP organization**;
+- locks the model profile, installs the trial grounding block in `.claude/CLAUDE.md`, and ends with `check`, which
+  must print `NO FRONTIER MODEL REACHABLE`.
 
-```json
-{"brand": "yourAICIV", "reseller": "Travis Morehead", "payment_url": "https://buy.stripe.com/..."}
-```
+It records the outcome in `config/birth_status.json` (`python3 tools/first_boot.py status`). It is idempotent: a
+born civ is left alone and the clock is never restarted, and a converted civ is never re-birthed.
 
-- `python3 tools/partner_profile.py show | name | intro` prints the resolved profile.
-- The newborn's first greeting and first-hello ceremony introduce it with the brand (for example, "your AiCIV from
-  yourAICIV"). The AiCIV's own name, chosen with its human, always comes first.
-- On a trial birth the three values are frozen into `config/trial.json`, and the countdown reads "Day 3 of 7 of your
-  trial with yourAICIV". While the trial runs, the file is read-only to the AiCIV.
-- **Another reseller** gets their own distribution by replacing this one file. Delete it for a plain, unbranded
-  AiCIV. A trial birth refuses to start without an `https://` payment link, from this file or `TRIAL_PAYMENT_URL`.
+**Nothing reaches a frontier model, even before first boot.** The tree ships with `MiniMax-M3` on every model setting
+(`.claude/settings.json` `model` and all six model env keys, `config/launch_model.txt`, the launch scripts' fallback),
+every agent manifest set to `model: inherit`, the model switch locked, and `ANTHROPIC_BASE_URL` pointed at a closed
+local port until first boot fills in the router. `python3 tools/apply_trial_profile.py check --static` proves this on
+an unborn tree.
+
+### If the router seams are missing
+
+The AiCIV **does not fall back to another model and does not start its clock.** It says so to everyone who can act:
+
+- **Operator:** `first_boot.py` prints a banner and exits 2 (the launchers show it and still start the session), and
+  `config/birth_status.json` reads `{"status": "blocked", "missing": [...]}`.
+- **Human:** the session opens with a system message, and every message they send is answered by the hook, with no
+  model call: *"THIS AiCIV CANNOT START YET. It is a yourAICIV 7-day trial that runs ONLY on MiniMax-M3, and its M3
+  router was not provided at birth ... It will not fall back to any other model ..."* Every tool call is denied.
+
+Fix: provide the seams, run `python3 tools/first_boot.py`, and restart the session (`tools/restart-self.sh`).
+
+If first boot happens inside an already-running session (the hook path, when a launcher other than the ones above
+started Claude), that session's settings predate the router. The hook blocks that session's prompts with a
+one-restart notice for the operator. The next session runs on M3 with the clock already running.
 
 ---
 
 ## Provisioning
 
-### Paid birth
+Set these **for the AiCIV's container** (process environment, or one `KEY=VALUE` file at `/etc/aiciv/m3-router.env`,
+which `first_boot.py` reads when a variable is not in the environment; `M3_SEAMS_FILE` overrides that path):
 
-Stamp the template into the new civ's home and fill the usual template variables (`variables.template.json`).
-No trial step runs, so no trial file exists.
+| Seam | Required | Value |
+|---|---|---|
+| `M3_ROUTER_BASE_URL` | **yes** | Anthropic-wire base URL of this tenant's MiniMax-M3 router |
+| `M3_ROUTER_KEY_FILE` | **yes** (or `M3_ROUTER_KEY`) | path to this tenant's router key file (or `M3_ROUTER_KEY=<key>`). Copied to `config/lifeboat/router_key.txt`, mode 0600, gitignored, never echoed |
+| `TRIAL_OPERATOR_COPY` | production | `/etc/aiciv/trial.json`: the trial record published **outside** the civ tree. The AiCIV can write its own tree, so access must never depend on the in-tree copy. First boot must be able to write it: run first boot as root once (for example `docker exec -u root <container> python3 /home/aiciv/tools/first_boot.py --root /home/aiciv`), which leaves the copy root-owned and gives every in-tree file back to the civ's user. An unwritable path is refused **before** any clock is written |
+| `PORTAL_PUBLIC_URL` | yes, for client sites | the AiCIV's public portal address (process env or `~/.env`). Client sites go live at `<PORTAL_PUBLIC_URL>/site/<slug>/`; without it, the setup links and Stripe return URLs fall back to a placeholder |
+| `M3_MODEL_ID` | no | default `MiniMax-M3` |
+| `TRIAL_PAYMENT_URL` | no | overrides `payment_url` from `config/partner.json` for one birth (must be `https://`) |
+| `TRIAL_START` | no | ISO8601 UTC; default is the moment of first boot |
 
-### Trial birth: filling the router seams
+**The portal** (same container) runs with `TRIAL_CONFIG_PATH=/etc/aiciv/trial.json`, the same path as
+`TRIAL_OPERATOR_COPY`. `apply` records that path in `.claude/settings.json` too, so the AiCIV's hook reads the same
+record. Without an operator copy the record is `config/trial.json`, which works, but the portal then logs that its
+source is civ-writable.
 
-The trial reaches MiniMax-M3 through an Anthropic-wire-compatible router. The template never contains the router
-address or key. Provisioning supplies them as environment variables for one command:
+**Required on the router side (outside this repository).** Anyone with a shell can edit files inside a container, so
+the router is the real boundary for a trial:
 
-```bash
-export M3_ROUTER_BASE_URL="<router base URL for this tenant>"      # required, never committed
-export M3_ROUTER_KEY_FILE="<path to this tenant's router key>"     # required (or M3_ROUTER_KEY)
-# optional:
-#   M3_MODEL_ID        default MiniMax-M3
-#   TRIAL_PAYMENT_URL  default payment_url from config/partner.json
-#   TRIAL_START        default now (UTC)
-export TRIAL_OPERATOR_COPY="/etc/aiciv/trial.json"   # canonical; outside the civ tree
-sudo -E python3 tools/apply_trial_profile.py apply --root "$CIV_ROOT"   # as root, so that copy is root-owned
-# then start the portal with TRIAL_CONFIG_PATH=/etc/aiciv/trial.json in its environment
-```
-
-The portal must read the **operator copy**, not the civ's `config/trial.json`, because the AiCIV can write its own
-tree (see `profiles/trial-m3/README.md`). `apply` also records `TRIAL_CONFIG_PATH` in `.claude/settings.json`, so the
-AiCIV's own hook reads the same copy. `apply` refuses (exit 2) if any seam is empty, so a trial can never quietly fall back to another model. It then:
-
-- copies the key to `config/lifeboat/router_key.txt` (mode 0600, gitignored) and records the endpoint;
-- points every model setting at M3, sets the router as the base URL with a key helper, and removes other model
-  credentials;
-- sets every specialist's model to `inherit`, and locks the model profile so it cannot be switched back from inside;
-- writes `config/trial.json` and the trial block in `.claude/CLAUDE.md`, and installs the trial hook.
-
-It finishes by running `check`, which must end with `NO FRONTIER MODEL REACHABLE`. Re-running it is safe, and the
-trial clock is kept.
-
-**Required on the router side (outside this repository).** Anyone with shell access can edit files inside a
-container, so the router is the real boundary for a trial:
-
-1. one key per trial civ, sized for the full organization;
-2. the key only forwards MiniMax model ids;
-3. the key expires (or throttles to a trickle) at `expires_at`, and is rotated on conversion;
-4. no other model credentials are provisioned into a trial container;
+1. one key per trial civ, sized for the full organization (an undersized slice means a dead AI on Day 1);
+2. the key forwards only MiniMax model ids;
+3. the key expires (or throttles to a trickle) at `expires_at`, and is replaced on conversion;
+4. no other model credentials in a trial container: no Claude login, no `ANTHROPIC_API_KEY`, and an empty
+   `GOOGLE_API_KEY` (`check` flags them);
 5. web search and fetch work through the router, or research is marked "unverified" rather than guessed.
 
-Full detail is in `profiles/trial-m3/README.md`.
-
-### Conversion
-
-```bash
-sudo -E python3 tools/apply_trial_profile.py convert --root "$CIV_ROOT"                    # ungate now
-sudo -E python3 tools/apply_trial_profile.py convert --root "$CIV_ROOT" --restore-models   # and return to paid routing
-```
-
-`convert` flips the operator copy recorded at birth (or `--operator-copy PATH`) and the civ copy.
-
-Conversion is a manual operator step for now. The planned follow-up is a Stripe `checkout.session.completed`
-webhook on the payment link that calls `convert` for the matching civ.
+Full profile detail: `profiles/trial-m3/README.md`.
 
 ---
 
 ## Checks
 
 ```bash
-python3 tools/test_trial_profile.py                 # trial + partner regression suite (scratch births, no network)
-python3 tools/apply_trial_profile.py check          # on a trial civ: no frontier model reachable
-python3 tools/trial_state.py status                 # the /api/trial JSON (not a trial -> "trial": false)
+python3 tools/apply_trial_profile.py check --static   # unborn tree: nothing pins or reaches a frontier model
+python3 tools/apply_trial_profile.py check            # born civ: NO FRONTIER MODEL REACHABLE
+python3 tools/first_boot.py status                    # blocked / trial-active, dates, where the record lives
+python3 tools/trial_state.py status                   # the portal's /api/trial JSON
+python3 tools/test_first_boot.py                      # first-boot suite (scratch births, no network)
+python3 tools/test_trial_profile.py                   # trial profile + partner + conversion suite
 ```
 
-Delivery-engine checks: `apps/client-starter/preflight.sh` (pinned dependencies, audit, compile), then the
-V1-V19 verification list in `.claude/skills/client-onboarding/SKILL.md`, Phase 4.
+The delivery engine has its own suite: `tools/test_delivery_engine.py` (run with a Python that has
+`apps/client-starter/requirements.txt` installed), plus `apps/client-starter/preflight.sh` and the V1-V19 list in
+`.claude/skills/client-onboarding/SKILL.md`, Phase 4.
+
+---
+
+## The delivery engine
+
+`apps/client-starter/` is a self-hosted Flask/SQLite business system: public funnel, CRM, a three-number dashboard,
+email automations, store, blog, affiliates, booking, and pluggable payments with Stripe as the default. The AiCIV runs
+it **for** its human (client #1 is their own business by default) and for their clients. It is the fastest route to a
+Day-1 WOW for a small-business owner.
+
+- Operating manual: `.claude/skills/client-onboarding/SKILL.md`.
+- `clone_client.sh <client-slug>` stamps a per-client instance with its own secrets, database, and port, bound to
+  `127.0.0.1` and gitignored. `tools/client_sites.py go-live` publishes it through the portal.
+- **Trial rules:** the AiCIV confirms with its human before putting a client site public. After expiry, no new client
+  work starts, and running client sites are never stopped or deleted (the portal answers them with a neutral 503).
+
+---
 
 ## Layout
 
 | Path | What |
 |---|---|
+| `tools/first_boot.py` | the first-boot step that makes every birth a trial |
 | `.claude/CLAUDE.md` | the newborn's constitution, with its self-removing birth gates at the top |
-| `.claude/skills/` | skills the AiCIV loads (client-onboarding, m3-trial-mode, identity-interview, and more) |
-| `apps/client-starter/` | the delivery engine scaffold |
-| `profiles/trial-m3/` | the trial profile |
+| `.claude/settings.json` | ships M3-only; first boot adds the router |
+| `.claude/hooks/trial_gate.py` | the AiCIV side of the trial: countdown, M3-only guard, Day-7 pause, first-boot safety net |
+| `.claude/skills/m3-trial-mode/` | the AiCIV's operating contract for the week |
+| `profiles/trial-m3/` | the trial profile (what `apply` changes and why) |
 | `config/partner.json` | reseller brand, reseller name, payment link |
-| `tools/` | provisioning and state tools (`apply_trial_profile.py`, `trial_state.py`, `partner_profile.py`, ...) |
+| `config/trial-m3-backup/` | the paid configuration that conversion restores |
+| `apps/client-starter/` | the delivery engine |
 | `workflows/` | multi-mind workflows, including the trial's build, verify, and ship loop |

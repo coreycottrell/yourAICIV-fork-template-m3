@@ -372,10 +372,13 @@ def restart_notice(inp: dict) -> str | None:
             f"{st.get('started_at', '')}). This session opened before its M3 router was connected, so it has to "
             "be restarted once to think. OPERATOR: run tools/restart-self.sh (or restart Claude in this folder). "
             "Nothing is lost and the trial clock keeps running.")
+
+
 def partner_kick(after_first_boot: bool = False) -> None:
-    """Report trial milestones to the reseller partner (tools/partner_notify.py). Never output, never raise.
-    after_first_boot: first boot just ran from this hook; if it blocked, the partner hears it now (one
-    'birth_blocked' notice), not after the kick throttle."""
+    """Report trial milestones to the reseller partner (tools/partner_notify.py). Off by default
+    (reseller notifications come from True Bearing): a silent no-op. Never output, never raise.
+    When switched on, after_first_boot: first boot just ran from this hook; if it blocked, the
+    partner hears it now (one 'birth_blocked' notice), not after the kick throttle."""
     try:
         import partner_notify  # noqa: E402  (tools/ is on sys.path)
         force = after_first_boot and not partner_notify.reported(ROOT, "birth_blocked")
@@ -394,7 +397,7 @@ def main() -> int:
     kicks = event in ("SessionStart", "UserPromptSubmit")
     pending = trial_state.birth_pending(ROOT)
     if kicks and not pending:
-        partner_kick()  # trial day 6 / expired / converted reach the partner (silent, background)
+        partner_kick()  # only when partner email is switched on (off by default); silent, background
     rec = trial_state.load(ROOT)
     if rec is None:
         if not pending:

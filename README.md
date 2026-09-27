@@ -92,6 +92,13 @@ On the first boot that has the router seams, it runs `tools/apply_trial_profile.
 It records the outcome in `config/birth_status.json` (`python3 tools/first_boot.py status`). It is idempotent: a
 born civ is left alone and the clock is never restarted, and a converted civ is never re-birthed.
 
+`config/partner.json` (the reseller partner profile):
+
+```json
+{"brand": "yourAICIV", "reseller": "Travis Morehead", "payment_url": "https://buy.stripe.com/...",
+ "notify_emails": ["partner@example.com"]}
+```
+
 **Nothing reaches a frontier model, even before first boot.** The tree ships with `MiniMax-M3` on every model setting
 (`.claude/settings.json` `model` and all six model env keys, `config/launch_model.txt`, the launch scripts' fallback),
 every agent manifest set to `model: inherit`, the model switch locked, and `ANTHROPIC_BASE_URL` pointed at a closed
@@ -113,6 +120,28 @@ Fix: provide the seams, run `python3 tools/first_boot.py`, and restart the sessi
 If first boot happens inside an already-running session (the hook path, when a launcher other than the ones above
 started Claude), that session's settings predate the router. The hook blocks that session's prompts with a
 one-restart notice for the operator. The next session runs on M3 with the clock already running.
+
+### Partner notifications
+
+Every AiCIV emails the partner in `notify_emails` (override: `PARTNER_NOTIFY_EMAILS`) one short notice per event,
+subject `[<brand>] <client> (<AiCIV>) - <event>`:
+
+| Event | Fired by |
+|---|---|
+| born and awake | session start hook, first session of a real birth |
+| first conversation done (goals, one line) | the AiCIV at interview Phase 5 / `.evolution-done` (backstop: disk sweep) |
+| each WOW build shipped (what + link) | the AiCIV when it writes ship-evidence (backstop: disk sweep) |
+| trial day 6 "expires tomorrow", trial expired (payment link shown), converted to paid | trial gate hook, watchdog, `apply_trial_profile.py convert` |
+| health problem (router unreachable, crash loop, Claude down 10+ min, or self-reported) | watchdog, the AiCIV |
+| delivery-engine alerts: new lead, order, booking, affiliate application | the client site, next to the owner's Telegram alert |
+
+- Method: `.claude/skills/partner-notifications/SKILL.md`. Sender: `tools/partner_notify.py`
+  (`send | sweep | flush | tick | status`). Each event has a key and is sent once, however many parts report it.
+- Transport: the AiCIV's own AgentMail inbox. Client sites email through their own Resend setup. With no email
+  provisioned, notices wait in `memories/partner-notifications/outbox/` (site alerts in
+  `apps/<slug>/logs/partner-outbox.jsonl`), the session status says so, and the watchdog sends them once email exists.
+  A notification never fails or slows the action that triggered it.
+- Empty `notify_emails` = nothing is sent.
 
 ---
 
@@ -159,6 +188,8 @@ python3 tools/first_boot.py status                    # blocked / trial-active, 
 python3 tools/trial_state.py status                   # the portal's /api/trial JSON
 python3 tools/test_first_boot.py                      # first-boot suite (scratch births, no network)
 python3 tools/test_trial_profile.py                   # trial profile + partner + conversion suite
+python3 tools/test_partner_notify.py                   # partner notifications: every event, once, to the partner
+apps/.venv/bin/python tools/test_delivery_engine.py    # delivery engine incl. partner copies of business alerts
 ```
 
 The delivery engine has its own suite: `tools/test_delivery_engine.py` (run with a Python that has
@@ -192,7 +223,9 @@ Day-1 WOW for a small-business owner.
 | `.claude/hooks/trial_gate.py` | the AiCIV side of the trial: countdown, M3-only guard, Day-7 pause, first-boot safety net |
 | `.claude/skills/m3-trial-mode/` | the AiCIV's operating contract for the week |
 | `profiles/trial-m3/` | the trial profile (what `apply` changes and why) |
-| `config/partner.json` | reseller brand, reseller name, payment link |
+| `config/partner.json` | reseller brand, reseller name, payment link, partner notification addresses |
 | `config/trial-m3-backup/` | the paid configuration that conversion restores |
 | `apps/client-starter/` | the delivery engine |
+| `.claude/skills/partner-notifications/` | how the AiCIV keeps the reseller partner informed about its client |
+| `tools/partner_notify.py` | the thin sender (AgentMail; queues to an outbox when email isn't provisioned) |
 | `workflows/` | multi-mind workflows, including the trial's build, verify, and ship loop |

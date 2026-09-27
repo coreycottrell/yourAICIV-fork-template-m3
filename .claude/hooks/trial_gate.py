@@ -372,6 +372,13 @@ def restart_notice(inp: dict) -> str | None:
             f"{st.get('started_at', '')}). This session opened before its M3 router was connected, so it has to "
             "be restarted once to think. OPERATOR: run tools/restart-self.sh (or restart Claude in this folder). "
             "Nothing is lost and the trial clock keeps running.")
+def partner_kick() -> None:
+    """Report trial milestones to the reseller partner (tools/partner_notify.py). Never output, never raise."""
+    try:
+        import partner_notify  # noqa: E402  (tools/ is on sys.path)
+        partner_notify.kick(ROOT)
+    except Exception as e:  # pragma: no cover
+        print(f"trial_gate: partner notify unavailable ({e})", file=sys.stderr)
 
 
 def main() -> int:
@@ -381,6 +388,8 @@ def main() -> int:
     except ValueError:
         inp = {}
     event = str(inp.get("hook_event_name") or (sys.argv[1] if len(sys.argv) > 1 else ""))
+    if event in ("SessionStart", "UserPromptSubmit"):
+        partner_kick()  # trial day 6 / expired / converted reach the partner (silent, background)
     rec = trial_state.load(ROOT)
     if rec is None:
         if not trial_state.birth_pending(ROOT):

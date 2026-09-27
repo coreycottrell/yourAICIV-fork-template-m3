@@ -92,13 +92,18 @@ def closed_port() -> int:
     return port
 
 
-def birth(dst: Path) -> Path:
+def birth(dst: Path, civ_name: str = "Keel", pending: bool = False) -> Path:
+    """A provisioned civ. pending=True keeps the tree as shipped (M3-trial-by-default, first boot not run,
+    ANTHROPIC_BASE_URL on the closed-port placeholder); otherwise the trial machinery is stripped."""
     shutil.copytree(SRC, dst, ignore=shutil.ignore_patterns(".git", "__pycache__", "partner-notifications", ".venv"),
                     symlinks=True)
-    for p in ("config/trial.json", "config/model_profile.json", "config/launch_model.txt"):
+    drop = ("config/trial.json", "config/birth_status.json", "config/.first_boot.lock")
+    if not pending:
+        drop += ("config/model_profile.json", "config/launch_model.txt")
+    for p in drop:
         (dst / p).unlink(missing_ok=True)
     ident = json.loads((dst / ".aiciv-identity.json").read_text())
-    ident.update({"civ_name": "Keel", "human_name": "Sam Jones"})
+    ident.update({"civ_name": civ_name, "human_name": "Sam Jones"})
     (dst / ".aiciv-identity.json").write_text(json.dumps(ident))
     prof = json.loads((dst / "memories/identity/human-profile.json").read_text())
     prof.update({"human_name": "Sam Jones", "goals": ["double catering orders", "stop losing weekend leads"]})
@@ -256,6 +261,47 @@ def main() -> int:
         run([sys.executable, "tools/partner_notify.py", "tick"], civ3)
         ok(len(stub.events("converted to paid")) == n + 1 and len(stub.events("trial expired")) == n_exp,
            "record flipped elsewhere -> watchdog tick reports 'converted' (not 'expired')")
+
+        print("[5b] M3 birth blocked on router seams: one clear notice, no generic router alert")
+        tide = birth(tmp / "tide", civ_name="Tide", pending=True)
+        noseams = {"M3_SEAMS_FILE": "/nonexistent/m3-router.env", "M3_ROUTER_BASE_URL": "",
+                   "M3_ROUTER_KEY_FILE": "", "M3_ROUTER_KEY": "", "PARTNER_HEALTH_PROBE_SECS": "0"}
+
+        def tide_mail(word: str) -> list[dict]:
+            return [p for p in stub.events(word) if "(Tide)" in p["subject"]]
+        g = hook(tide, "trial_gate.py", "SessionStart", noseams)
+        st = json.loads((tide / "config/birth_status.json").read_text())
+        ok(st.get("status") == "blocked" and "systemMessage" in g.stdout, "first boot without seams -> blocked",
+           g.stdout[-200:] + g.stderr[-200:])
+        bl = tide_mail("blocked: M3 router not provisioned yet")
+        ok(len(bl) == 1 and "M3_ROUTER_BASE_URL" in bl[0]["text"] and "clock has NOT started" in bl[0]["text"]
+           and "first_boot.py" in bl[0]["text"],
+           "the block reaches the partner at once: one 'blocked: M3 router not provisioned yet' email",
+           f"{len(bl)} {[p['subject'] for p in stub.posts if '(Tide)' in p['subject']]}")
+        hook(tide, "session_start.py", "SessionStart", noseams)
+        for _ in range(2):
+            hook(tide, "trial_gate.py", "UserPromptSubmit", noseams)
+        for env in (noseams, {**noseams, "ANTHROPIC_BASE_URL": "http://127.0.0.1:9/m3-router-not-provisioned"}):
+            for _ in range(4):
+                run([sys.executable, "tools/partner_notify.py", "tick"], tide, env)
+        th = json.loads((tide / "memories/partner-notifications/health.json").read_text())
+        ok(len(tide_mail("blocked: M3 router")) == 1 and not tide_mail("model unreachable")
+           and not tide_mail("born and awake"),
+           "8 ticks + session start + 2 prompts while blocked: still one notice; no 'model unreachable', no 'born'")
+        ok(th["consecutive_failures"] == 0 and th["last_result"].startswith("not probed: not born yet"),
+           "router probe does not count while the birth is blocked", json.dumps(th))
+        key3 = tmp / "key3.txt"
+        key3.write_text("rk_TEST_dummy_not_a_key\n")
+        withseams = {**noseams, "M3_ROUTER_BASE_URL": "https://m3-router.invalid/anthropic",
+                     "M3_ROUTER_KEY_FILE": str(key3)}
+        hook(tide, "trial_gate.py", "UserPromptSubmit", withseams)
+        ok(json.loads((tide / "config/birth_status.json").read_text()).get("status") == "trial-active"
+           and len(tide_mail("born and awake")) == 1, "seams provided -> born at the next prompt -> one 'born' email")
+        run([sys.executable, "tools/partner_notify.py", "tick"], tide, noseams)
+        th = json.loads((tide / "memories/partner-notifications/health.json").read_text())
+        ok(th["consecutive_failures"] == 1 and th["last_result"].startswith("unreachable"),
+           "born and routed -> the router probe counts from here", json.dumps(th))
+        ok(len(tide_mail("blocked: M3 router")) == 1, "the block notice is never repeated after birth")
 
         print("[6] health")
         for _ in range(2):

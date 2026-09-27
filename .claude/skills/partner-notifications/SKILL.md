@@ -29,7 +29,8 @@ never sees these emails. It is a courtesy feed, not a report card: short, plain,
 
 | Event | When | Who fires it |
 |---|---|---|
-| `born` | your first session in a real birth | automatic (session start hook) |
+| `born` | your first session in a real birth, once first boot has made you a trial on M3 | automatic (session start hook) |
+| `birth_blocked` | first boot refused: your M3 router seams are missing (`config/birth_status.json` `blocked`), so you cannot think yet | automatic (trial gate + watchdog), once. The watchdog's router probe only counts once you are born and routed, so the partner never gets a generic "model unreachable" for this |
 | `first_conversation` | the first real conversation with your human is done: you know their goals | **you**, the moment you write `.evolution-done` (or the trial interview's `.identity-interview-complete/`) |
 | `wow_shipped` | a WOW build is in the human's hands | **you**, the moment you write `build-N-ship-evidence/receipt.txt` |
 | `trial_ending` | trial day 6: expires tomorrow | automatic (trial gate + watchdog) |

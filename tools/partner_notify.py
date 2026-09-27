@@ -18,7 +18,11 @@ ONCE:  every event has a key (born, first_conversation, wow_shipped:<n>, ...).
        still gets exactly one email.
 
 EVENTS
-  born                 AiCIV born and awake (auto: first session of a real birth)
+  born                 AiCIV born and awake (auto: first session of a real birth, once first boot
+                       has actually applied the profile)
+  birth_blocked        M3-trial-by-default birth that cannot start: first boot refused because the
+                       M3 router seams are missing (config/birth_status.json "blocked"). Once, ever.
+                       Until the AiCIV is born and routed, the model-router probe does not count.
   first_conversation   first real conversation with the human done (--summary: goals, one line)
   wow_shipped          a WOW build shipped (--build N --summary what --link URL)
   trial_ending         trial day 6+: expires tomorrow (auto)
@@ -64,10 +68,11 @@ if str(HERE) not in sys.path:
 import partner_profile  # noqa: E402  (sibling tool)
 
 STATE_DIR = "memories/partner-notifications"
-EVENTS = ("born", "first_conversation", "wow_shipped", "trial_ending", "trial_expired",
+EVENTS = ("born", "birth_blocked", "first_conversation", "wow_shipped", "trial_ending", "trial_expired",
           "converted", "health", "business_alert")
 TITLES = {
     "born": "is born and awake",
+    "birth_blocked": "blocked: M3 router not provisioned yet",
     "first_conversation": "first conversation done",
     "wow_shipped": "WOW build shipped",
     "trial_ending": "trial expires tomorrow",
@@ -243,12 +248,16 @@ def compose(root: Path, event: str, summary: str = "", link: str = "", build: st
         title = f"WOW build #{build} shipped"
     if event == "health" and kind:
         title = f"health problem: {kind.replace('_', ' ')}"
-    if event == "business_alert" and extra and extra.get("title"):
+    if event in ("business_alert", "birth_blocked") and extra and extra.get("title"):
         title = extra["title"]
     subject = f"[{prof['brand']}] {name} - {title}"
     lines = []
     head = {
         "born": f"{who['civ'] or 'A new AiCIV'} was just born for {who['human'] or 'its human'} and is awake.",
+        "birth_blocked": f"{who['civ'] or 'This AiCIV'} cannot start yet. It is a 7-day MiniMax-M3 trial, and its "
+                         "first boot is blocked waiting for the operator: it will not fall back to any other "
+                         "model, so it cannot think or reply to "
+                         f"{who['human'] or 'its human'} until this is fixed. The 7-day clock has NOT started.",
         "first_conversation": "The first real conversation with the human is done; the AiCIV knows their goals.",
         "wow_shipped": f"WOW build{(' #' + build) if build else ''} is shipped and in the human's hands.",
         "trial_ending": "The 7-day trial expires tomorrow.",
@@ -471,6 +480,57 @@ def notify(root: Path, event: str, summary: str = "", link: str = "", build: str
         return {"result": "error", "error": f"{type(e).__name__}: {e}"}
 
 
+# ── M3-trial-by-default first boot (no-ops on a tree without it) ─────────────
+
+def _trial_state():
+    try:
+        import trial_state  # sibling tool
+        return trial_state
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def birth_pending(root: Path) -> bool:
+    """A trial-by-default tree whose first boot has not applied the trial profile yet."""
+    ts = _trial_state()
+    try:
+        return bool(ts and hasattr(ts, "birth_pending") and ts.birth_pending(root))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def birth_blocked(root: Path) -> dict | None:
+    """config/birth_status.json when first boot refused ("blocked") and the birth is still pending."""
+    if not birth_pending(root):
+        return None
+    st = _json(root / "config/birth_status.json", {}) or {}
+    return st if isinstance(st, dict) and st.get("status") == "blocked" else None
+
+
+def blocked_notice(st: dict) -> tuple[str, str, dict]:
+    """(summary, link, extra) for the one birth_blocked notice."""
+    missing = [str(m) for m in (st.get("missing") or [])]
+    router = any(m.startswith("M3_ROUTER") for m in missing) or not missing
+    extra = {"title": TITLES["birth_blocked"] if router else "blocked: first boot cannot finish",
+             "blocked_since": str(st.get("checked_at") or ""),
+             "operator_fix": "put M3_ROUTER_BASE_URL and M3_ROUTER_KEY_FILE (or M3_ROUTER_KEY) in the container "
+                             "environment or /etc/aiciv/m3-router.env, run `python3 tools/first_boot.py`, then "
+                             "restart the session (tools/restart-self.sh)."}
+    return ("Missing at first boot: " + "; ".join(missing)) if missing else "", "", extra
+
+
+def model_routed(root: Path, base: str) -> tuple[bool, str]:
+    """Is there a real router to probe? Not while the birth is pending/blocked, and never the shipped
+    closed-port placeholder: those failures are the (already reported) block, not an outage."""
+    ts = _trial_state()
+    placeholder = str(getattr(ts, "UNPROVISIONED_BASE_URL", "") or "") if ts else ""
+    if birth_pending(root):
+        return False, "not born yet (first boot pending" + (", blocked)" if birth_blocked(root) else ")")
+    if placeholder and base.rstrip("/") == placeholder.rstrip("/"):
+        return False, "router not provisioned (placeholder base URL)"
+    return True, ""
+
+
 # ── what the disk says happened (sweep) ──────────────────────────────────────
 
 def _old_enough(p: Path) -> bool:
@@ -522,7 +582,11 @@ def sweep(root: Path, deliver: bool = True) -> list[dict]:
         return []
     found: list[tuple] = []           # (event, summary, link, extra, build)
     if is_real_birth(root):
-        found.append(("born", "", "", {}, ""))
+        blocked = birth_blocked(root)
+        if blocked is not None:
+            found.append(("birth_blocked", *blocked_notice(blocked), ""))
+        elif not birth_pending(root):
+            found.append(("born", "", "", {}, ""))
     ident = root / "memories/identity"
     for marker in (ident / ".identity-interview-complete", ident / ".evolution-done"):
         if marker.exists() and _old_enough(marker):
@@ -551,14 +615,19 @@ def sweep(root: Path, deliver: bool = True) -> list[dict]:
     return out
 
 
-def kick(root: Path) -> None:
-    """For hooks: run the sweep without slowing the hook (background, throttled, silent)."""
+def reported(root: Path, key: str) -> bool:
+    return (root / STATE_DIR / "keys" / _safe(key)).exists()
+
+
+def kick(root: Path, force: bool = False) -> None:
+    """For hooks: run the sweep without slowing the hook (background, throttled, silent).
+    force=True skips the throttle (a hook that just changed what the disk says)."""
     try:
         if disabled() or not partner_profile.load(root)["notify_emails"]:
             return
         stamp = state_dir(root) / ".last-kick"
         try:
-            if time.time() - stamp.stat().st_mtime < KICK_THROTTLE_SECS:
+            if not force and time.time() - stamp.stat().st_mtime < KICK_THROTTLE_SECS:
                 return
         except OSError:
             pass
@@ -584,13 +653,20 @@ def model_base_url(root: Path) -> str:
 
 
 def probe_model(root: Path) -> dict | None:
-    """Is this AiCIV's model router reachable? Only probed when a router URL is configured.
+    """Is this AiCIV's model router reachable? Only probed when a router URL is configured AND the
+    AiCIV is born and routed (an unborn/blocked M3 birth is reported once as birth_blocked instead).
     Any HTTP answer below 500 = reachable (no key is sent). Alerts after 3 misses in a row."""
     base = model_base_url(root)
     if not base:
         return None
     hp = state_dir(root) / "health.json"
     h = _json(hp, {}) or {}
+    routed, why = model_routed(root, base)
+    if not routed:
+        want = {**h, "consecutive_failures": 0, "last_result": f"not probed: {why}"}
+        if want != h:
+            _write_json(hp, want)
+        return None
     if time.time() - float(h.get("last_probe", 0)) < PROBE_EVERY_SECS:
         return None
     ok, detail = True, ""

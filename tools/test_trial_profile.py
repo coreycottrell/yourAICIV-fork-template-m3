@@ -327,8 +327,21 @@ def main() -> int:
         gate(exp, {"hook_event_name": "UserPromptSubmit", "prompt": "hi"})
         ok(len(partner_msgs(exp, "converted")) == 1 and len(partner_msgs(exp, "trial_expired")) == 1,
            "later turns add nothing (each event once)")
-        ok(not partner_msgs(paid, "trial_expired") and not partner_msgs(paid, "converted"),
-           "paid civ: no trial notices")
+        # In this template every birth is a trial, so the paid reference is a CONVERTED trial: the partner
+        # hears the sale exactly once ('converted'), and never a trial countdown/expiry for a paid civ,
+        # however many sessions and turns follow.
+        for ev in ("SessionStart", "UserPromptSubmit", "UserPromptSubmit"):
+            gate(paid, {"hook_event_name": ev, "prompt": "hi"})
+        ok(len(partner_msgs(paid, "converted")) == 1
+           and not any(partner_msgs(paid, e) for e in ("trial_ending", "trial_expired", "birth_blocked")),
+           "converted (paid) civ: exactly one 'converted' notice, never a trial countdown/expiry/blocked notice")
+        unborn = tmp / "unborn8b"
+        copy_template(unborn)
+        for ev in ("SessionStart", "UserPromptSubmit"):
+            gate(unborn, {"hook_event_name": ev, "prompt": "hi"})
+        ob = unborn / "memories/partner-notifications"
+        ok(not list(ob.glob("outbox/*.json")) and not list(ob.glob("sent/*.json")),
+           "unborn template tree (no client identity, first boot blocked): no partner notices at all")
         st = run([sys.executable, "tools/partner_notify.py", "status", "--json"], exp, {"CIV_ROOT": str(exp)})
         ok(json.loads(st.stdout)["email_ready"] is False and "no email capability" in json.loads(st.stdout)["why_not"],
            "no email provisioned: status says so (notices wait in the outbox)")

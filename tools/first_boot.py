@@ -12,7 +12,10 @@ It runs automatically, before any model call, from every path that starts the Ai
 
 What it does (idempotent; a lock serializes concurrent callers):
 
-  * trial already applied   -> nothing to write; `--verify` re-runs the no-frontier check
+  * trial already applied   -> nothing to write; `--verify` re-runs the no-frontier check and, when it
+                               passes, rewrites config/birth_status.json to "trial-active" (a stale
+                               "failed"/"blocked" record is replaced; previous_status + reverified_at
+                               are kept; the trial clock is read, never restarted)
   * trial converted to paid -> nothing (conversion is final)
   * first boot, seams given -> tools/apply_trial_profile.py apply with TRIAL_START = now:
                                config/trial.json (7 days from now, payment link from
@@ -207,6 +210,32 @@ def run_check(root: Path) -> subprocess.CompletedProcess:
                           capture_output=True, text=True)
 
 
+def reverify_status(root: Path, civ: dict, via: str) -> str:
+    """The check passed on a born trial civ: birth_status.json says so. A stale "failed" or
+    "blocked" record (the problem was fixed after it was written) becomes "trial-active" with
+    previous_status and reverified_at; an existing trial-active record keeps every field
+    (born_at, provisioned_in_session, ...). The dates come from the trial record as it is:
+    this never writes config/trial.json, so the clock never restarts. Returns the previous status."""
+    old = read_status(root)
+    prev = str(old.get("status") or "")
+    if prev == "trial-active":
+        rec = dict(old)
+    else:
+        rec = {"status": "trial-active", "previous_status": prev or None, "via": via}
+        if old.get("checked_at"):
+            rec["previous_checked_at"] = old["checked_at"]
+    rec["status"] = "trial-active"
+    for k in ("started_at", "expires_at", "payment_url", "model"):
+        if civ.get(k):
+            rec[k] = civ[k]
+    rec["trial_record"] = str(trial_state.record_path(root)[0])
+    rec["reverified_at"] = now_iso()
+    write_status(root, rec)
+    if prev != "trial-active":
+        log_line(root, f"verify via={via}: birth_status {prev or 'none'} -> trial-active")
+    return prev
+
+
 def first_boot(root: Path, via: str, session_id: str = "", verify: bool = False, quiet: bool = False) -> int:
     say = (lambda m: None) if quiet else (lambda m: print(f"[first-boot] {m}"))
     with Lock(root):
@@ -223,7 +252,13 @@ def first_boot(root: Path, via: str, session_id: str = "", verify: bool = False,
             if verify:
                 r = run_check(root)
                 say(r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "check produced no output")
-                return 0 if r.returncode == 0 else 1
+                if r.returncode != 0:
+                    return 1
+                if civ and not civ.get("_corrupt"):
+                    prev = reverify_status(root, civ, via)
+                    if prev != "trial-active":
+                        say(f"config/birth_status.json: {prev or 'none'} -> trial-active (verified)")
+                return 0
             say("already born: trial profile applied; nothing to do")
             return 0
 

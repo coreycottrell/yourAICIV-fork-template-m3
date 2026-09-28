@@ -90,6 +90,11 @@ FRONTIER_RX = re.compile(
     r"\bclaude-(?:(?:opus|sonnet|haiku|instant)[\w.\-\[\]]*|\d[\d.\-]*-(?:opus|sonnet|haiku)[\w.\-\[\]]*)", re.I)
 AGENT_MODEL_RX = re.compile(r"^model:\s*(.+?)\s*$", re.M)
 PAID_BACKUP_DIR = "config/trial-m3-backup"
+# Runtime status/log files the tree scan skips: they QUOTE earlier findings (birth_status.json keeps
+# the failed check's message), they route nothing, and scanning them made a fixed civ fail its own
+# check forever. Whole dirs: logs/ and the partner-notification outbox/sent mail.
+RUNTIME_STATUS_FILES = {"config/birth_status.json"}
+RUNTIME_STATUS_DIRS = ("logs", "memories/partner-notifications")
 
 
 def now_iso() -> str:
@@ -406,6 +411,9 @@ def check(root: Path, static: bool = False) -> int:
     for p in root.rglob("*"):
         if not p.is_file() or ".git" in p.parts or "trial-m3-backup" in p.parts:
             continue
+        rel = p.relative_to(root).as_posix()
+        if rel in RUNTIME_STATUS_FILES or any(rel.startswith(d + "/") for d in RUNTIME_STATUS_DIRS):
+            continue  # runtime status/logs quote past findings; they route nothing
         if p.suffix not in (".js", ".mjs", ".ts", ".sh", ".py", ".json") or p.name.endswith(".bak"):
             continue
         if p.name in ("apply_trial_profile.py", "trial_gate.py", "session_review.py", "test_trial_profile.py",

@@ -92,6 +92,12 @@ On the first boot that has the router seams, it runs `tools/apply_trial_profile.
 It records the outcome in `config/birth_status.json` (`python3 tools/first_boot.py status`). It is idempotent: a
 born civ is left alone and the clock is never restarted, and a converted civ is never re-birthed.
 
+After fixing a problem on a born civ, `python3 tools/first_boot.py --verify` re-runs the check; when it passes, a
+stale `failed`/`blocked` record in `config/birth_status.json` becomes `trial-active` (with `previous_status` and
+`reverified_at`; the dates are read from the trial record, never restarted). The check's tree scan skips runtime
+status and log files (`config/birth_status.json`, `logs/`, the partner-notification mail), which quote earlier
+findings rather than route anything.
+
 `config/partner.json` (the reseller partner profile):
 
 ```json

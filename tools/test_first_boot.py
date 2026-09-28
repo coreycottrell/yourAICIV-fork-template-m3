@@ -161,6 +161,46 @@ def main() -> int:
            and json.loads((civ / "config/trial.json").read_text()) == rec, "re-run is a no-op; clock kept")
         r3 = run([sys.executable, "tools/first_boot.py", "--root", str(civ), "--verify"], civ)
         ok(r3.returncode == 0 and "NO FRONTIER MODEL REACHABLE" in r3.stdout, "--verify re-runs the check")
+
+        print("[3b] a stale 'failed' birth_status is re-verified (ticket 3350)")
+        st_path = civ / "config/birth_status.json"
+        trial_before = (civ / "config/trial.json").read_text()
+        born = json.loads(st_path.read_text())
+        # the record quotes the old failure, including a frontier model assignment, exactly as a real one does
+        stale = {"status": "failed", "checked_at": "2026-09-27T20:00:00Z", "via": "restart-self.sh",
+                 "message": "FAIL  tools/launch_civ_tower.sh hard-pins a frontier model: claude --model claude-opus-4-8"
+                            "\nFAIL  config/x.sh:2: ANTHROPIC_MODEL=claude-opus-4-8"}
+        st_path.write_text(json.dumps(stale, indent=2))
+        assign = re.compile(r"(--model[= ]+['\"]?claude|(ANTHROPIC_MODEL|CLAUDE_CODE_SUBAGENT_MODEL)=['\"]?claude)", re.I)
+        ok(bool(assign.search(st_path.read_text())), "(the stale record really does match the scan's assignment patterns)")
+        (civ / "logs").mkdir(exist_ok=True)
+        (civ / "logs/old-check.json").write_text('{"model": "claude-opus-4-8"}\n')
+        r = run([sys.executable, "tools/apply_trial_profile.py", "check", "--root", str(civ)], civ)
+        ok(r.returncode == 0 and "birth_status" not in r.stdout and "logs/" not in r.stdout,
+           "tree scan ignores config/birth_status.json and logs/ (they quote past findings)")
+        rogue = civ / "tools/rogue_router.py"
+        rogue.write_text('model = "claude-opus-4-8"\n')
+        r = run([sys.executable, "tools/first_boot.py", "--root", str(civ), "--verify"], civ)
+        ok(r.returncode == 1 and "tools/rogue_router.py" in run(
+            [sys.executable, "tools/apply_trial_profile.py", "check", "--root", str(civ)], civ).stdout
+           and json.loads(st_path.read_text())["status"] == "failed",
+           "a real routing file is still flagged, and a failing --verify leaves the record alone")
+        rogue.unlink()
+        r = run([sys.executable, "tools/first_boot.py", "--root", str(civ), "--verify"], civ)
+        st = json.loads(st_path.read_text())
+        ok(r.returncode == 0 and "failed -> trial-active" in r.stdout, "--verify passes and says failed -> trial-active")
+        ok(st.get("status") == "trial-active" and st.get("previous_status") == "failed"
+           and st.get("previous_checked_at") == "2026-09-27T20:00:00Z" and st.get("reverified_at")
+           and "message" not in st, "birth_status.json = trial-active, previous_status + reverified_at kept")
+        ok(st.get("started_at") == rec["started_at"] and st.get("expires_at") == rec["expires_at"]
+           and (civ / "config/trial.json").read_text() == trial_before, "the clock is read, never restarted")
+        st_path.write_text(json.dumps({**born, "provisioned_in_session": "sess-1"}))
+        r = run([sys.executable, "tools/first_boot.py", "--root", str(civ), "--verify"], civ)
+        st = json.loads(st_path.read_text())
+        ok(r.returncode == 0 and st.get("born_at") == born["born_at"] and st.get("provisioned_in_session") == "sess-1"
+           and st.get("reverified_at") and "previous_status" not in st,
+           "an already trial-active record keeps its fields (born_at, provisioned_in_session) + reverified_at")
+        (civ / "logs/old-check.json").unlink()
         ctx = gate(civ, {"hook_event_name": "UserPromptSubmit", "session_id": "b", "prompt": "hi"})
         ok("Day 1 of 7" in ctx, "the AiCIV sees Day 1 of 7")
 
